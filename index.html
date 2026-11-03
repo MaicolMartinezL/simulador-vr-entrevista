@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador VR - Entrevista WebXR HD</title>
+  
+  <!-- A-Frame v1.4.0 -->
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <!-- Componente de Animaciones GLTF (aframe-extras) -->
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.2.0/dist/aframe-extras.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #0F172A;
+    }
+    #ui-container {
+      position: absolute;
+      bottom: 25px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 999;
+      display: flex;
+      gap: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    .btn {
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
+      transition: all 0.2s ease;
+    }
+    .btn:active { transform: scale(0.94); }
+    .btn-primary { background: linear-gradient(135deg, #0284C7, #0369A1); }
+    .btn-success { background: linear-gradient(135deg, #16A34A, #15803D); display: none; }
+    .btn-warning { background: linear-gradient(135deg, #D97706, #B45309); display: none; }
+    .btn:hover { filter: brightness(1.15); transform: translateY(-2px); }
+  </style>
+
+  <script>
+    // 1. RENDERIZADO DE DOBLE CARA EN MODELOS GLTF
+    AFRAME.registerComponent('fix-walls', {
+      init: function () {
+        this.el.addEventListener('model-loaded', () => {
+          const mesh = this.el.getObject3D('mesh');
+          if (!mesh) return;
+          mesh.traverse((node) => {
+            if (node.isMesh && node.material) {
+              node.material.side = THREE.DoubleSide;
+              node.material.needsUpdate = true;
+            }
+          });
+        });
+      }
+    });
+
+    // 2. BARRERA ANTI-COLISIÓN INVISIBLE
+    AFRAME.registerComponent('room-bounds', {
+      schema: {
+        minX: { type: 'number', default: -3.0 },
+        maxX: { type: 'number', default: 5.5 },
+        minZ: { type: 'number', default: -3.5 },
+        maxZ: { type: 'number', default: 3.8 }
+      },
+      tick: function () {
+        const pos = this.el.object3D.position;
+        pos.x = THREE.MathUtils.clamp(pos.x, this.data.minX, this.data.maxX);
+        pos.z = THREE.MathUtils.clamp(pos.z, this.data.minZ, this.data.maxZ);
+      }
+    });
+
+    // 3. INTERACCIÓN Y HOVER TRANSLÚCIDO PARA BOTONES 3D
+    AFRAME.registerComponent('button-3d-interactor', {
+      init: function () {
+        const el = this.el;
+        const backPane = el.querySelector('.btn-bg');
+
+        el.addEventListener('mouseenter', () => {
+          el.setAttribute('scale', '1.05 1.05 1.05');
+          if (backPane) {
+            backPane.setAttribute('material', 'color', '#38BDF8');
+            backPane.setAttribute('material', 'opacity', '0.85');
+          }
+        });
+
+        el.addEventListener('mouseleave', () => {
+          el.setAttribute('scale', '1 1 1');
+          if (backPane) {
+            backPane.setAttribute('material', 'color', el.dataset.baseColor || '#0284C7');
+            backPane.setAttribute('material', 'opacity', '0.55');
+          }
+        });
+      }
+    });
+  </script>
+</head>
+<body>
+
+  <!-- UI 2D SUPERPUESTA DE RESPALDO (DESKTOP) -->
+  <div id="ui-container">
+    <button id="btn-habituacion" class="btn btn-primary">🎙️ Probar Micrófono e Iniciar</button>
+    <button id="btn-finalizar-respuesta" class="btn btn-success">⏹️ Terminar Respuesta</button>
+    <button id="btn-simular-texto" class="btn btn-warning">✍️ Probar con Texto de Ejemplo</button>
+  </div>
+
+  <a-scene 
+    loading-screen="enabled: false;"
+    webxr="optionalFeatures: hit-test, local-floor;"
+    renderer="antialias: true; colorManagement: true; physicallyCorrectLights: true; exposure: 1.25;"
+    background="color: #BAE6FD">
+
+    <!-- RECURSOS 3D LOCALES -->
+    <a-assets timeout="10000">
+      <a-asset-item id="oficina-model" src="./assets/oficina.glb"></a-asset-item>
+      <a-asset-item id="avatar-model" src="./assets/entrevistador.glb"></a-asset-item>
+    </a-assets>
+
+    <!-- ILUMINACIÓN -->
+    <a-light type="ambient" color="#FFFBEB" intensity="0.85"></a-light>
+    <a-light type="directional" color="#FFF7ED" intensity="1.4" position="-4 4.5 2" cast-shadow="true"></a-light>
+    <a-light type="directional" color="#BAE6FD" intensity="0.6" position="3 2 -1"></a-light>
+
+    <!-- 1. ENTORNO 3D OFICINA -->
+    <a-entity 
+      id="entorno-oficina" 
+      gltf-model="#oficina-model" 
+      fix-walls
+      position="-3.360 1.483 -0.032" 
+      rotation="0 0 0" 
+      scale="1.000 0.981 1.000">
+    </a-entity>
+
+    <!-- PARED TRASERA DE CIERRE -->
+    <a-box 
+      id="pared-cierre-trasera" 
+      position="5.824 2.169 0.000" 
+      rotation="0 90.000 0" 
+      scale="0.883 0.868 1.000"
+      width="10" height="5" depth="0.1" 
+      color="#334155" 
+      material="roughness: 0.85">
+    </a-box>
+
+    <!-- 2. AVATAR RECLUTADOR -->
+    <a-entity id="avatar-entrevistador" position="0 0 0">
+      <a-entity id="target-ojos-avatar" position="-1.221 1.40 -0.153"></a-entity>
+
+      <a-entity 
+        id="avatar-mesh"
+        gltf-model="#avatar-model" 
+        animation-mixer
+        position="-1.221 -0.019 -0.153" 
+        rotation="0 76.319 0" 
+        scale="0.982 0.89 1.000">
+      </a-entity>
+    </a-entity>
+
+    <!-- 3. RIG DE CÁMARA E INTERFAZ ESPACIAL TRANSLÚCIDA -->
+    <a-entity 
+      id="rig" 
+      position="5.378 0 0.078" 
+      rotation="0 88.465 0" 
+      wasd-controls="acceleration: 45" 
+      room-bounds="minX: -3.0; maxX: 5.5; minZ: -3.5; maxZ: 3.8;">
+      
+      <a-camera id="main-camera" position="0 2.4 0" look-controls="pointerLockEnabled: false" wasd-controls="enabled: false">
+        
+        <a-entity cursor="rayOrigin: mouse" raycaster="objects: .raycastable; far: 10"></a-entity>
+
+        <!-- TABLERO PRINCIPAL VERTICAL (ENCUADRADO A LA DERECHA) -->
+        <a-entity id="hud-container" position="0.80 0.05 -1.1" rotation="0 -18 0">
+          <!-- Borde fino translúcido vertical -->
+          <a-plane position="0 0 -0.003" width="0.72" height="0.92" color="#38BDF8" material="transparent: true; opacity: 0.35; shader: flat"></a-plane>
+          <!-- Cristal translúcido vertical -->
+          <a-plane position="0 0 0" width="0.68" height="0.88" color="#0F172A" material="transparent: true; opacity: 0.55; shader: flat"></a-plane>
+          
+          <a-entity 
+            id="hud-system"
+            position="0 0 0.01"
+            text="value: FASE DE HABITUACION TECNICA\n\nHaz clic en el boton para probar el microfono; align: center; width: 0.62; color: #F8FAFC; wrapCount: 20">
+          </a-entity>
+        </a-entity>
+
+        <!-- CONSOLA DE BOTONES TRANSLÚCIDOS -->
+        <a-entity id="panel-botones-3d" position="0 -0.45 -1.0" rotation="-28 0 0">
+          
+          <!-- Botón 1: Habituación / Micrófono -->
+          <a-entity 
+            id="btn-3d-habituacion"
+            class="raycastable"
+            button-3d-interactor
+            data-base-color="#0284C7"
+            geometry="primitive: plane; width: 0.85; height: 0.15"
+            material="visible: false"
+            position="0 0 0">
+            <a-plane position="0 0 -0.002" width="0.87" height="0.17" color="#0284C7" material="transparent: true; opacity: 0.4; shader: flat"></a-plane>
+            <a-plane class="btn-bg" position="0 0 0" width="0.85" height="0.15" color="#0284C7" material="transparent: true; opacity: 0.55; shader: flat"></a-plane>
+            <a-entity position="0 0 0.01" text="value: 🎙️ PROBAR MICROFONO E INICIAR; align: center; width: 1.1; color: #FFFFFF"></a-entity>
+          </a-entity>
+
+          <!-- Botón 2: Terminar Respuesta -->
+          <a-entity 
+            id="btn-3d-finalizar"
+            class="raycastable"
+            button-3d-interactor
+            data-base-color="#16A34A"
+            visible="false"
+            geometry="primitive: plane; width: 0.70; height: 0.15"
+            material="visible: false"
+            position="-0.40 0 0">
+            <a-plane position="0 0 -0.002" width="0.72" height="0.17" color="#16A34A" material="transparent: true; opacity: 0.4; shader: flat"></a-plane>
+            <a-plane class="btn-bg" position="0 0 0" width="0.70" height="0.15" color="#16A34A" material="transparent: true; opacity: 0.55; shader: flat"></a-plane>
+            <a-entity position="0 0 0.01" text="value: ⏹️ TERMINAR RESPUESTA; align: center; width: 1.0; color: #FFFFFF"></a-entity>
+          </a-entity>
+
+          <!-- Botón 3: Simular Texto -->
+          <a-entity 
+            id="btn-3d-simular"
+            class="raycastable"
+            button-3d-interactor
+            data-base-color="#D97706"
+            visible="false"
+            geometry="primitive: plane; width: 0.70; height: 0.15"
+            material="visible: false"
+            position="0.40 0 0">
+            <a-plane position="0 0 -0.002" width="0.72" height="0.17" color="#D97706" material="transparent: true; opacity: 0.4; shader: flat"></a-plane>
+            <a-plane class="btn-bg" position="0 0 0" width="0.70" height="0.15" color="#D97706" material="transparent: true; opacity: 0.55; shader: flat"></a-plane>
+            <a-entity position="0 0 0.01" text="value: ✍️ TEXTO EJEMPLO; align: center; width: 1.0; color: #FFFFFF"></a-entity>
+          </a-entity>
+
+        </a-entity>
+
+      </a-camera>
+
+      <!-- MANDOS VR META QUEST -->
+      <a-entity id="leftHand" laser-controls="hand: left" raycaster="objects: .raycastable; far: 5"></a-entity>
+      <a-entity id="rightHand" laser-controls="hand: right" raycaster="objects: .raycastable; far: 5"></a-entity>
+    </a-entity>
+
+  </a-scene>
+
+  <!-- MOTOR FSM -->
+  <script type="module">
+    import { FSMEngine } from './fsmEngine.js';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      try {
+        window.fsm = new FSMEngine();
+        window.fsm.init();
+        console.log('[App] Motor FSM cargado.');
+      } catch (err) {
+        console.error('[Error de Carga Módulo]', err);
+      }
+    });
+  </script>
+
+</body>
+</html>
