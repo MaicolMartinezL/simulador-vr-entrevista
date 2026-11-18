@@ -136,6 +136,38 @@
         this.el.sceneEl.addEventListener('exit-vr', () => setTimeout(syncHeight, 200));
       }
     });
+
+    // 5. DESPLAZAMIENTO CON JOYSTICK IZQUIERDO EN META QUEST 2
+    AFRAME.registerComponent('thumbstick-locomotion', {
+      schema: { speed: { type: 'number', default: 2.2 } },
+      init: function () {
+        this.axis = { x: 0, y: 0 };
+        const leftHand = document.querySelector('#leftHand');
+        if (leftHand) {
+          leftHand.addEventListener('thumbstickmoved', (evt) => {
+            this.axis.x = evt.detail.x;
+            this.axis.y = evt.detail.y;
+          });
+        }
+      },
+      tick: function (time, delta) {
+        if (Math.abs(this.axis.x) < 0.15 && Math.abs(this.axis.y) < 0.15) return;
+        const camEl = document.querySelector('#main-camera');
+        const cameraObj = camEl && camEl.getObject3D('camera');
+        if (!cameraObj) return;
+
+        const forward = new THREE.Vector3();
+        cameraObj.getWorldDirection(forward);
+        forward.y = 0;
+        forward.normalize();
+
+        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+        const step = this.data.speed * (delta / 1000);
+
+        this.el.object3D.position.addScaledVector(forward, -this.axis.y * step);
+        this.el.object3D.position.addScaledVector(right, this.axis.x * step);
+      }
+    });
   </script>
 </head>
 <body>
@@ -210,6 +242,7 @@
       position="5.378 0 0.078"
       rotation="0 88.465 0"
       wasd-controls="acceleration: 45"
+      thumbstick-locomotion
       room-bounds="minX: -3.0; maxX: 5.5; minZ: -3.5; maxZ: 3.8;">
 
       <a-camera id="main-camera" position="0 2.4 0" look-controls="pointerLockEnabled: false" wasd-controls="enabled: false"></a-camera>
