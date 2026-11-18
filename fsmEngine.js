@@ -325,11 +325,93 @@ export class FSMEngine {
     this.voicePlayer = new Audio();
     this.voicePlayer.preload = 'auto';
     this.audioCtx = null;
+
+    // Control de animacion sutil de cabeza/mandibula (solo si el modelo es estatico)
+    this.talkingAnimFrame = null;
+    this.avatarBones = {
+      head: null,
+      jaw: null
+    };
+    this.bonesScanned = false;
   }
 
   init() {
     this.bindEvents();
+    if (this.avatarMesh) {
+      this.avatarMesh.addEventListener('model-loaded', () => {
+        this.bonesScanned = false;
+        this.scanAvatarRig();
+      });
+    }
     this.transitionTo('HABITUACION');
+  }
+
+  scanAvatarRig() {
+    if (this.bonesScanned || !this.avatarMesh || !this.avatarMesh.object3D) return;
+
+    const mesh = this.avatarMesh.getObject3D('mesh');
+    if (!mesh) return;
+
+    mesh.traverse((node) => {
+      if (node.isBone) {
+        const name = node.name.toLowerCase();
+        if (!this.avatarBones.head && /head/.test(name) && !/top|end/.test(name)) {
+          this.avatarBones.head = node;
+          node.userData.baseRot = node.rotation.clone();
+        } else if (!this.avatarBones.jaw && /jaw|mandibula|mouth/.test(name)) {
+          this.avatarBones.jaw = node;
+          node.userData.baseRot = node.rotation.clone();
+        }
+      }
+    });
+
+    this.bonesScanned = true;
+  }
+
+  startProceduralTalking() {
+    this.stopProceduralTalking();
+    if (!this.avatarMesh || !this.avatarMesh.object3D) return;
+
+    this.scanAvatarRig();
+    const mesh = this.avatarMesh.getObject3D('mesh');
+    const hasClipAnim = Boolean(mesh && mesh.animations && mesh.animations.length > 0);
+
+    // Si el modelo GLB ya tiene su propia animacion, no forzamos rotaciones sobre los huesos
+    if (hasClipAnim) return;
+
+    const startTime = performance.now();
+    const animate = (now) => {
+      const t = (now - startTime) / 1000;
+      const nod = Math.sin(t * 4.5) * 0.035;
+      const turn = Math.sin(t * 1.8) * 0.025;
+      const jawOpen = Math.abs(Math.sin(t * 12.0)) * 0.12;
+
+      const { head, jaw } = this.avatarBones;
+      if (head && head.userData.baseRot) {
+        head.rotation.x = head.userData.baseRot.x + nod;
+        head.rotation.y = head.userData.baseRot.y + turn;
+      }
+      if (jaw && jaw.userData.baseRot) {
+        jaw.rotation.x = jaw.userData.baseRot.x + jawOpen;
+      }
+
+      this.talkingAnimFrame = requestAnimationFrame(animate);
+    };
+
+    this.talkingAnimFrame = requestAnimationFrame(animate);
+  }
+
+  stopProceduralTalking() {
+    if (this.talkingAnimFrame) {
+      cancelAnimationFrame(this.talkingAnimFrame);
+      this.talkingAnimFrame = null;
+    }
+
+    Object.values(this.avatarBones).forEach((bone) => {
+      if (bone && bone.userData.baseRot) {
+        bone.rotation.copy(bone.userData.baseRot);
+      }
+    });
   }
 
   sanitizeForAFrame(text) {
@@ -547,16 +629,43 @@ export class FSMEngine {
 
   setAvatarTalkingState(isTalking) {
     if (!this.avatarMesh) return;
-    const mesh = this.avatarMesh.getObject3D('mesh');
-    if (!mesh || !mesh.animations || mesh.animations.length <= 1) return;
 
-    const talkClip = mesh.animations.find((a) => /talk|speak|habla/i.test(a.name));
-    const idleClip = mesh.animations.find((a) => /idle|espera|stand/i.test(a.name));
+    if (isTalking) {
+      this.startProceduralTalking();
+    } else {
+      this.stopProceduralTalking();
+    }
+
+    const mesh = this.avatarMesh.getObject3D('mesh');
+    if (!mesh || !mesh.animations || mesh.animations.length === 0) return;
+
+    if (mesh.animations.length === 1) {
+      this.avatarMesh.setAttribute('animation-mixer', {
+        clip: mesh.animations[0].name,
+        timeScale: isTalking ? 1.25 : 0.85
+      });
+      return;
+    }
+
+    const talkClip =
+      mesh.animations.find((a) => /talk|speak|habla|gesture|gesto/i.test(a.name)) ||
+      mesh.animations[1];
+    const idleClip =
+      mesh.animations.find((a) => /idle|espera|stand/i.test(a.name)) ||
+      mesh.animations[0];
 
     if (isTalking && talkClip) {
-      this.avatarMesh.setAttribute('animation-mixer', { clip: talkClip.name, crossFadeDuration: 0.3 });
+      this.avatarMesh.setAttribute('animation-mixer', {
+        clip: talkClip.name,
+        crossFadeDuration: 0.35,
+        timeScale: 1.0
+      });
     } else if (!isTalking && idleClip) {
-      this.avatarMesh.setAttribute('animation-mixer', { clip: idleClip.name, crossFadeDuration: 0.3 });
+      this.avatarMesh.setAttribute('animation-mixer', {
+        clip: idleClip.name,
+        crossFadeDuration: 0.35,
+        timeScale: 1.0
+      });
     }
   }
 
