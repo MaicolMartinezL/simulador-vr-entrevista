@@ -141,7 +141,7 @@ export class FSMEngine {
       }
     }
 
-    return outVec.set(0, 1.55, -2.2);
+    return outVec.set(-0.45, 1.55, -2.3);
   }
 
   startEyeContactTracking() {
@@ -343,8 +343,8 @@ export class FSMEngine {
 
     if (this.latestLiveTranscript) {
       const visibleSpeech =
-        this.latestLiveTranscript.length > 170
-          ? '...' + this.latestLiveTranscript.slice(-170)
+        this.latestLiveTranscript.length > 165
+          ? '...' + this.latestLiveTranscript.slice(-165)
           : this.latestLiveTranscript;
 
       this.updateHUD(`TURNO (${num}/${total}) [${this.micBar}] ${gazeTag}\n\n"${visibleSpeech}"`);
@@ -504,7 +504,6 @@ export class FSMEngine {
 
       this.totalAudioFrames++;
       if (average > 14) {
-        // Registra el tiempo de reacción inicial al detectar la primera emisión vocal
         if (this.firstSpeechTime === null) {
           this.firstSpeechTime = now;
         }
@@ -523,7 +522,6 @@ export class FSMEngine {
       } else {
         silenceMs += dt;
 
-        // Acumula pausas prolongadas (> 2.5s) una vez que el candidato ya inició su respuesta
         if (this.firstSpeechTime !== null && silenceMs > 2500) {
           if (!prolongedPauseCounted) {
             this.prolongedSilenceMs += silenceMs;
@@ -591,7 +589,6 @@ export class FSMEngine {
   }
 
   evaluarPilaresSTAR(textoLimpio, totalPalabras, fluidezVocalPct, duracionSeg) {
-    // Si estamos en modo acústico sin transcripción, estima una base proporcional
     if (totalPalabras === 0) {
       const base = Math.min(75, Math.max(30, Math.round(fluidezVocalPct * 0.55 + Math.min(25, duracionSeg * 2))));
       return {
@@ -643,7 +640,6 @@ export class FSMEngine {
       ? 14
       : Math.max(2, Math.round((now - this.answerStartTime) / 1000));
 
-    // Variable Dependiente 2: Latencia cognitiva (reacción inicial) y pausas prolongadas (> 2.5s)
     const reaccionSeg = esSimulado
       ? 1.2
       : this.firstSpeechTime !== null
@@ -668,7 +664,6 @@ export class FSMEngine {
     const muletillas = muletillasTexto + hesitacionesAcusticas;
     const tasaMuletillasMin = duracionSeg > 0 ? +(muletillas / (duracionSeg / 60)).toFixed(1) : 0;
 
-    // Puntaje cuantitativo S.T.A.R. (0 a 100) y desglose por pilar
     const { starScore, pilares } = this.evaluarPilaresSTAR(
       textoLimpio,
       totalPalabras,
@@ -676,7 +671,6 @@ export class FSMEngine {
       duracionSeg
     );
 
-    // Cálculo del puntaje de la respuesta (0 a 100)
     let puntaje = Math.round(starScore * 0.45 + fluidezVocalPct * 0.25);
     if (totalPalabras > 0) {
       if (wpm >= 100 && wpm <= 165) puntaje += 20;
@@ -686,7 +680,6 @@ export class FSMEngine {
       puntaje += Math.min(20, duracionSeg * 2);
     }
 
-    // Penalizaciones por latencia cognitiva alta, silencios > 2.5s y tasa de muletillas/min
     if (reaccionSeg <= 2.5) puntaje += 10;
     else if (reaccionSeg > 4.5) puntaje -= 8;
 
@@ -737,7 +730,6 @@ export class FSMEngine {
       ? Math.round(respuestasConTexto.reduce((acc, r) => acc + r.wpm, 0) / respuestasConTexto.length)
       : 0;
 
-    // Detectar qué pilar S.T.A.R. tuvo menor desempeño promedio
     const avgPilares = {
       Situacion: this.resultadosPorPregunta.reduce((acc, r) => acc + r.pilares.situacion, 0) / n,
       Tarea: this.resultadosPorPregunta.reduce((acc, r) => acc + r.pilares.tarea, 0) / n,
@@ -755,7 +747,6 @@ export class FSMEngine {
     }
     const detalleStar = menorPuntajePilar < 16 ? `Falto: ${pilarFaltante}` : 'Pilares completos';
 
-    // Porcentaje de contacto visual
     const contactoVisualPct =
       this.totalGazeSamples > 0
         ? Math.round((this.eyeContactSamples / this.totalGazeSamples) * 100)
@@ -850,7 +841,14 @@ export class FSMEngine {
     const cleanText = this.sanitizeForAFrame(text);
     if (cleanText === this.lastRenderedHUD) return;
     this.lastRenderedHUD = cleanText;
-    this.hudText.setAttribute('text', { value: cleanText, wrapCount: 30 });
+
+    // Ajusta el ancho de lectura para que todas las métricas quepan completas dentro del FOV de Quest 2
+    this.hudText.setAttribute('text', {
+      value: cleanText,
+      width: 1.08,
+      wrapCount: 28,
+      align: 'center'
+    });
   }
 
   toggleButtons({ habituacion, finalizar, simular }) {
